@@ -1,79 +1,65 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh">
 <head>
-<meta charset="UTF-8">
-<script src="https://cdn.jsdelivr.net/npm/glslCanvas@0.2.6/dist/GlslCanvas.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Creative Coding · Weekly Work</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #00092a;
+    color: #e8f6ff;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    box-sizing: border-box;
+  }
+  main { width: 100%; max-width: 560px; }
+  h1 { font-size: 32px; font-weight: 600; margin: 0 0 8px; }
+  .sub { margin: 0 0 32px; color: rgba(232, 246, 255, 0.65); }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li + li { margin-top: 12px; }
+  a {
+    display: block;
+    padding: 18px 20px;
+    border: 1px solid rgba(118, 200, 255, 0.3);
+    border-radius: 10px;
+    color: inherit;
+    text-decoration: none;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  a:hover, a:focus-visible {
+    background: rgba(118, 200, 255, 0.08);
+    border-color: rgba(118, 200, 255, 0.8);
+    outline: none;
+  }
+  .week { font-size: 13px; color: #76c8ff; }
+  .title { font-size: 19px; margin-top: 4px; }
+  .desc { font-size: 14px; margin-top: 4px; color: rgba(232, 246, 255, 0.65); }
+</style>
 </head>
 <body>
-
-<canvas class="glslCanvas" width="800" height="600" data-fragment="
-
-precision mediump float;
-
-#define PI 3.14159265358979323846
-
-uniform vec2 u_resolution;
-uniform float u_time;
-
-vec2 rotate2D (vec2 _st, float _angle) {
-  _st -= 0.5;
-  _st =  mat2(cos(_angle),-sin(_angle),
-              sin(_angle),cos(_angle)) * _st;
-  _st += 0.5;
-  return _st;
-}
-
-vec2 tile (vec2 _st, float _zoom) {
-  _st *= _zoom;
-  return fract(_st);
-}
-
-vec2 rotateTilePattern(vec2 _st){
-
- 
-  _st *= 2.0;
-
-  float index = 0.0;
-  index += step(1., mod(_st.x,2.0));
-  index += step(1., mod(_st.y,2.0))*2.0;
-
-
-  _st = fract(_st);
-
-  if(index == 1.0){
-      //  Rotate cell 1 by 90 degrees
-      _st = rotate2D(_st,PI*0.5);
-  } else if(index == 2.0){
-      //  Rotate cell 2 by -90 degrees
-      _st = rotate2D(_st,PI*-0.5);
-  } else if(index == 3.0){
-      //  Rotate cell 3 by 180 degrees
-      _st = rotate2D(_st,PI);
-  }
-
-  return _st;
-}
-
-void main (void) {
-  vec2 st = gl_FragCoord.xy/u_resolution.xy;
-
-  st = tile(st,3.0);
-
-  st = rotate2D(st,-PI*u_time*0.25);
-
-  st = rotateTilePattern(st);
-
-  float d = length(st - vec2(0.5)) - 0.3;
-
-  float shape = 1.0 - smoothstep(0.0, 0.03, d);
-
-  vec3 colorBackground = vec3(0.05, 0.05, 0.2);
-  vec3 colorShape = vec3(1.0, 0.4, 0.1);
-  vec3 color = mix(colorBackground, colorShape, shape);
-
-  gl_FragColor = vec4(color,1.0);
-}
-"></canvas>
-
+<main>
+  <h1>Homework</h1>
+  <p class="sub"></p>
+  <ul>
+    <li>
+      <a href="week1.html">
+        <div class="week">Week 1</div>
+        <div class="title">Pattern </div>
+        <div class="desc"></div>
+      </a>
+    </li>
+    <li>
+      <a href="week2.html">
+        <div class="week">Week 2 · 9/16</div>
+        <div class="title">Mouse-Warped FBM Shader</div>
+        <div class="desc"></div>
+      </a>
+    </li>
+  </ul>
+</main>
 </body>
 </html>
