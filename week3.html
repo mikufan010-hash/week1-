@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 3 · Liquid Mirror Camera Filter</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #00092a; overflow: hidden; }
+  canvas {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh;
+    display: block;
+    cursor: crosshair;
+    touch-action: none;
+  }
+  video { display: none; }
+  .msg {
+    position: fixed; inset: 0;
+    display: grid; place-items: center;
+    padding: 24px; text-align: center;
+    color: #e8f6ff;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<video id="cam" autoplay playsinline muted></video>
+<div class="msg" id="msg">opening camera…</div>
+
+<script id="frag" type="x-shader/x-fragment">
+#ifdef GL_ES
+precision mediump float;
+#endif
+
+uniform sampler2D u_cam;    
+uniform vec2 u_camSize;     
+uniform vec2 u_resolution;
+uniform vec2 u_mouse;
+uniform float u_time;
+
+// fbm
+float random (in vec2 _st) {
+    return fract(sin(dot(_st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+}
+
+float noise (in vec2 _st) {
+    vec2 i = floor(_st);
+    vec2 f = fract(_st);
+    float a = random(i);
+    float b = random(i + vec2(1.0, 0.0));
+    float c = random(i + vec2(0.0, 1.0));
+    float d = random(i + vec2(1.0, 1.0));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+
+#define NUM_OCTAVES 5
+float fbm (in vec2 _st) {
+    float v = 0.0;
+    float a = 0.5;
+    vec2 shift = vec2(100.0);
+    mat2 rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));
+    for (int i = 0; i < NUM_OCTAVES; ++i) {
+        v += a * noise(_st);
+        _st = rot * _st * 2.0 + shift;
+        a *= 0.5;
+    }
+    return v;
+}
+
+vec2 camUV(vec2 uv) {
+    float screenAspect = u_resolution.x / u_resolution.y;
+    float camAspect = u_camSize.x / u_camSize.y;
+    if (screenAspect > camAspect) {
+        uv.y = 0.5 + (uv.y - 0.5) * (camAspect / screenAspect);
+    } else {
+        uv.x = 0.5 + (uv.x - 0.5) * (screenAspect / camAspect);
+    }
+    uv.x = 1.0 - uv.x;  
+    return uv;
+}
+
+float brightness(vec3 c) {
+    return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+float brightnessAt(vec2 uv) {
+    return brightness(texture2D(u_cam, uv).rgb);
+}
+
+void main() {
+    vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+    vec2 m  = u_mouse / u_resolution.xy;
+
+    // domain warping
+    float aspect = u_resolution.x / u_resolution.y;
+    vec2 st = vec2(uv.x * aspect, uv.y) * 3.0;
+
+    vec2 q = vec2(fbm(st + 0.05 * u_time), fbm(st + vec2(5.2, 1.3)));
+    vec2 r = vec2(fbm(st + 4.0 * q + vec2(1.7, 9.2) + 0.15 * u_time),
+                  fbm(st + 4.0 * q + vec2(8.3, 2.8) + 0.126 * u_time));
+
+  
+    float strength = mix(0.0, 0.12, m.x);
+    vec2 warped = uv + (r - 0.5) * strength;
+
+    vec2 cuv = camUV(warped);
+    vec3 cam = texture2D(u_cam, cuv).rgb;
+
+    vec2 px = 1.5 / u_camSize;
+    float dx = brightnessAt(cuv + vec2(px.x, 0.0)) - brightnessAt(cuv - vec2(px.x, 0.0));
+    float dy = brightnessAt(cuv + vec2(0.0, px.y)) - brightnessAt(cuv - vec2(0.0, px.y));
+    float edge = smoothstep(0.04, 0.2, length(vec2(dx, dy)));
+
+    float b = brightness(cam);
+    vec3 tone = mix(vec3(0.0, 0.0, 0.165), vec3(0.245, 0.517, 0.667), smoothstep(0.0, 0.5, b));
+    tone = mix(tone, vec3(0.667, 1.0, 1.0), smoothstep(0.5, 1.0, b));
+
+    vec3 color = mix(cam, tone, m.y);
+
+    // light
+    color += vec3(0.667, 1.0, 1.0) * edge * 0.8;
+
+    gl_FragColor = vec4(color, 1.0);
+}
+</script>
+
+<script>
+(function () {
+  const canvas = document.getElementById('c');
+  const video = document.getElementById('cam');
+  const msg = document.getElementById('msg');
+  const gl = canvas.getContext('webgl');
+  if (!gl) { msg.textContent = ' this web page doesnt support WebGL:-('; return; }
+
+  
+  const vertSrc = `
+    attribute vec2 a_position;
+    void main() { gl_Position = vec4(a_position, 0.0, 1.0); }
+  `;
+  const fragSrc = document.getElementById('frag').textContent;
+
+  function compile(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(sh));
+      throw new Error('Shader compile failed');
+    }
+    return sh;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, vertSrc));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fragSrc));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+
+  
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1, -1,  1, -1,  -1, 1,
+    -1,  1,  1, -1,   1, 1
+  ]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'a_position');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);   // 视频和 WebGL 的 Y 轴方向相反
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  const uRes     = gl.getUniformLocation(prog, 'u_resolution');
+  const uMouse   = gl.getUniformLocation(prog, 'u_mouse');
+  const uTime    = gl.getUniformLocation(prog, 'u_time');
+  const uCam     = gl.getUniformLocation(prog, 'u_cam');
+  const uCamSize = gl.getUniformLocation(prog, 'u_camSize');
+  gl.uniform1i(uCam, 0);
+
+  let dpr = 1;
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width  = Math.floor(canvas.clientWidth  * dpr);
+    canvas.height = Math.floor(canvas.clientHeight * dpr);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const target = { x: canvas.width * 0.5, y: canvas.height * 0.5 };
+  const mouse  = { x: target.x, y: target.y };
+  function setTarget(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    target.x = (clientX - rect.left) * dpr;
+    target.y = (rect.height - (clientY - rect.top)) * dpr;
+  }
+  window.addEventListener('pointermove', e => setTarget(e.clientX, e.clientY));
+  window.addEventListener('pointerdown', e => setTarget(e.clientX, e.clientY));
+
+  
+  navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false })
+    .then(stream => {
+      video.srcObject = stream;
+      return video.play();
+    })
+    .then(() => {
+      msg.style.display = 'none';
+      requestAnimationFrame(frame);
+    })
+    .catch(err => {
+      console.error(err);
+      msg.textContent = 'cant open camera.please use local server';
+    });
+
+  const start = performance.now();
+  function frame(now) {
+    if (video.readyState >= 2) {
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+    }
+    mouse.x += (target.x - mouse.x) * 0.08;
+    mouse.y += (target.y - mouse.y) * 0.08;
+
+    gl.uniform2f(uRes, canvas.width, canvas.height);
+    gl.uniform2f(uMouse, mouse.x, mouse.y);
+    gl.uniform1f(uTime, (now - start) / 1000);
+    gl.uniform2f(uCamSize, video.videoWidth || 1280, video.videoHeight || 720);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    requestAnimationFrame(frame);
+  }
+})();
+</script>
+</body>
+</html>
