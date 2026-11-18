@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>To do list</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root { --cell: 46px; --grid: #1c1c1c; --red: #e8352b; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #000; color: #fff;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    user-select: none; -webkit-user-select: none;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 22px;
+    padding: 14px 28px 12px; border-bottom: 2px solid var(--red); font-size: 15px;
+  }
+  h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.04em; flex: 1; }
+  #status { color: #fff; }
+  .link { border: none; padding: 0; font-size: 15px; color: #888; background: none; }
+  .link:hover { background: none; color: #fff; text-decoration: underline; }
+  main { display: flex; gap: 44px; padding: 24px 28px 40px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+
+  /* ---------- calendar ---------- */
+  .board-wrap { display: grid; grid-template-columns: 52px auto; grid-template-rows: 38px auto; }
+  .days { grid-column: 2; display: grid; grid-template-columns: repeat(7, var(--cell)); }
+  .days div { position: relative; text-align: center; font-size: 13px; color: #888; line-height: 30px; }
+  .days .today { color: #fff; font-weight: bold; }
+  .days .bar { position: absolute; left: 3px; right: 3px; bottom: 2px; height: 4px; background: #333; }
+  .days .bar i { display: block; height: 100%; width: 100%; background: var(--red); }
+  .hours { grid-row: 2; display: grid; grid-template-rows: repeat(10, var(--cell)); }
+  .hours div { font-size: 12px; color: #777; text-align: right; padding-right: 8px; transform: translateY(-7px); }
+  #board {
+    position: relative; grid-row: 2; grid-column: 2; overflow: hidden;
+    width: calc(var(--cell) * 7 + 1px); height: calc(var(--cell) * 10 + 1px);
+    background-color: #000;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: var(--cell) var(--cell);
+    border: 1px solid #333; touch-action: none;
+  }
+  #fx { grid-row: 2; grid-column: 2; position: relative; pointer-events: none; z-index: 5; }
+  .today-col { position: absolute; left: 0; top: 0; width: var(--cell); height: 100%; background: rgba(255,255,255,.06); }
+  #board.flash .today-col { animation: flash .4s ease; }
+  @keyframes flash { from { background: rgba(255,255,255,.5); } to { background: rgba(255,255,255,.06); } }
+
+  /* ---------- blocks ---------- */
+  .cell { position: absolute; width: var(--cell); height: var(--cell); }
+  .cell .label {
+    position: absolute; left: 4px; top: 4px; max-width: calc(var(--cell) * 2 - 8px);
+    overflow: hidden; text-overflow: ellipsis;
+    font-size: 11px; line-height: 1.2; color: #000; white-space: nowrap; pointer-events: none; z-index: 2;
+  }
+  .preview { opacity: .4; }
+  .preview.bad { background: var(--red) !important; }
+  .piece { position: relative; }
+  .float { position: fixed; pointer-events: none; z-index: 100; opacity: .9; }
+
+  /* ---------- the to-do pile (a Tetris well) ---------- */
+  .panel { width: calc(var(--cell) * 5 + 1px); }
+  .panel h2 { font-size: 15px; font-weight: 400; color: #aaa; margin: 8px 0 14px; display: flex; justify-content: space-between; }
+  .panel h2.full { color: var(--red); }
+  #well {
+    position: relative; width: calc(var(--cell) * 5 + 1px); height: calc(var(--cell) * 10 + 1px);
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: var(--cell) var(--cell);
+    border: 1px solid #333; border-top: none; touch-action: none;
+  }
+  #well .cell { cursor: grab; }
+  #well .ghost { opacity: .2; }
+  .danger-line { position: absolute; left: 0; right: 0; top: calc(var(--cell) * 2); border-top: 1px dashed #5a1d1a; }
+  #well.danger .danger-line { border-top: 2px solid var(--red); animation: blink .4s steps(1) infinite; }
+  .next { height: 3px; background: #222; margin-top: 12px; }
+  .next i { display: block; height: 100%; width: 0; background: #fff; }
+
+  /* ---------- feel ---------- */
+  .shake { animation: shake .2s; }
+  @keyframes shake {
+    25% { transform: translate(-3px, 2px); } 50% { transform: translate(3px, -1px); } 75% { transform: translate(-1px, 1px); }
+  }
+  .hit { animation: hit .3s ease-out; }
+  @keyframes hit { from { filter: brightness(2.5); } to { filter: none; } }
+  .debris { position: absolute; width: var(--cell); height: var(--cell); z-index: 4; animation: burst .65s ease-in forwards; }
+  @keyframes burst { to { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; } }
+  .popup {
+    position: absolute; z-index: 6; pointer-events: none; white-space: nowrap;
+    font-size: 24px; font-weight: 700; letter-spacing: -.03em; color: #fff;
+    animation: floatup 1.1s ease-out forwards;
+  }
+  .popup.big { font-size: 34px; color: #f9e05e; }
+  @keyframes floatup { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-60px); opacity: 0; } }
+
+  .hint { font-size: 13px; color: #666; margin: 16px 0; }
+  button {
+    font: inherit; font-size: 15px; padding: 8px 18px;
+    border: 2px solid #fff; background: #000; color: #fff; cursor: pointer;
+  }
+  button:hover { background: #fff; color: #000; }
+
+  /* ---------- overlay screens ---------- */
+  #overlay {
+    position: fixed; inset: 0; background: #000; z-index: 200;
+    display: flex; padding: 24px; overflow-y: auto;
+  }
+  #overlay.hidden { display: none; }
+  .screen { width: 460px; max-width: 100%; margin: auto; }
+  .screen h2 { font-size: 56px; font-weight: 700; letter-spacing: -.05em; line-height: .95; margin: 0 0 14px; }
+  .screen p { color: #bbb; font-size: 15px; line-height: 1.6; margin: 0 0 16px; }
+  .screen textarea {
+    width: 100%; height: 120px; font: inherit; font-size: 15px; line-height: 1.6;
+    color: #fff; background: #000; border: 1px solid #555; padding: 10px 12px; resize: vertical;
+    user-select: text; -webkit-user-select: text;
+  }
+  .screen textarea:focus { outline: none; border-color: #fff; }
+  .screen .buttons { display: flex; gap: 12px; margin-top: 16px; }
+  .screen ul { list-style: none; padding: 0; margin: 0 0 8px; max-height: 260px; overflow: auto; font-size: 14px; line-height: 1.9; }
+  .screen ul b { display: inline-block; width: 46px; font-weight: 400; color: #888; }
+  .screen .dot { display: inline-block; width: 10px; height: 10px; margin: 0 4px 0 8px; }
+
+  /* ---------- title screen ---------- */
+  #title { position: fixed; inset: 0; background: #000; z-index: 300; overflow: hidden; }
+  #title.hidden { display: none; }
+  #titleCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .title-ui {
+    position: absolute; left: 4vw; right: 4vw; bottom: 5vh;
+    display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none;
+  }
+  .title-ui h1 {
+    font-size: clamp(64px, 12.5vw, 190px); font-weight: 700; letter-spacing: -.06em;
+    line-height: .8; margin: 0; flex: none;
+  }
+  .title-ui button {
+    pointer-events: auto; border: none; background: none; padding: 0 0 8px;
+    font-size: 16px; color: #fff; animation: blink 1s steps(1) infinite;
+  }
+  .title-ui button:hover { background: none; color: #fff; text-decoration: underline; animation: none; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ---------- fixed commitments (busy time) ---------- */
+  .busy, .cal-block.busy, .ed-cell.on {
+    background: repeating-linear-gradient(45deg, #3a3a3a, #3a3a3a 6px, #2c2c2c 6px, #2c2c2c 12px);
+  }
+  .busy .label, .cal-block.busy { color: #bbb; }
+  .screen h3 { font-size: 15px; font-weight: 400; color: #fff; margin: 22px 0 6px; }
+  .screen .small { font-size: 13px; color: #888; margin: 0 0 10px; }
+  .ed-tools { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; font-size: 13px; color: #aaa; }
+  .ed-tools input {
+    font: inherit; font-size: 14px; width: 140px; color: #fff; background: #000;
+    border: none; border-bottom: 1px solid #555; padding: 4px 2px;
+    user-select: text; -webkit-user-select: text;
+  }
+  .ed-tools input:focus { outline: none; border-bottom-color: #fff; }
+  .ed-tools button { font-size: 12px; padding: 4px 10px; border-width: 1px; margin-left: auto; }
+  .editor { display: grid; grid-template-columns: 44px repeat(7, 36px); touch-action: none; cursor: crosshair; }
+  .editor .eh { font-size: 11px; color: #888; text-align: center; padding-bottom: 4px; }
+  .editor .er { font-size: 11px; color: #666; text-align: right; padding-right: 6px; line-height: 26px; }
+  .ed-cell {
+    height: 26px; border-right: 1px solid #1c1c1c; border-bottom: 1px solid #1c1c1c;
+    font-size: 9px; color: #bbb; padding: 2px 3px; overflow: hidden; white-space: nowrap;
+  }
+  .ed-cell:hover { outline: 1px solid #fff; outline-offset: -1px; }
+
+  /* ---------- calendar view ---------- */
+  .screen.wide { width: auto; max-width: 95vw; }
+  .cal-scroll { overflow-x: auto; padding-bottom: 8px; margin-bottom: 8px; }
+  .cal { display: grid; grid-template-columns: 52px auto; }
+  .cal-head { grid-column: 2; display: flex; }
+  .cal-head div { width: 96px; flex: none; text-align: center; font-size: 13px; line-height: 1.4; padding-bottom: 8px; color: #888; }
+  .cal-head .today { color: #fff; font-weight: bold; }
+  .cal-head small { display: block; font-size: 11px; font-weight: 400; }
+  .cal-head .past small { color: #75f47a; }
+  .cal-hours { display: grid; grid-template-rows: repeat(10, 40px); }
+  .cal-hours div { font-size: 12px; color: #777; text-align: right; padding-right: 8px; transform: translateY(-7px); }
+  .cal-body { display: flex; border-left: 1px solid #333; }
+  .cal-col {
+    position: relative; width: 96px; height: 400px; flex: none; border-right: 1px solid #333;
+    background-image: linear-gradient(#1c1c1c 1px, transparent 1px); background-size: 100% 40px;
+  }
+  .cal-col.past .cal-block { opacity: .45; }
+  .cal-col.today { background-color: rgba(255,255,255,.06); }
+  .cal-block {
+    position: absolute; left: 2px; right: 2px; padding: 4px 6px; color: #000;
+    font-size: 12px; line-height: 1.3; overflow: hidden;
+  }
+  .cal-block small { display: block; font-size: 10px; opacity: .7; }
+  .cal-legend { font-size: 13px; color: #888; margin: 0 0 12px; }
+
+  /* ---------- font: Bricolage Grotesque ---------- */
+  body, button, input, textarea { font-family: "Bricolage Grotesque", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  h1, .screen h2, .title-ui h1 { font-weight: 800; letter-spacing: -.035em; }
+  .title-ui h1 { letter-spacing: -.045em; line-height: .82; }
+  .popup { font-weight: 800; letter-spacing: -.02em; }
+  .cell .label, .cal-block { font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>to_do list</h1>
+  <span id="status">day 1 — 0h done</span>
+  <button class="link" id="muteBtn">sound on</button>
+  <button class="link" id="calBtn">calendar</button>
+  <button class="link" id="pauseBtn">pause</button>
+</header>
+
+<main>
+  <div class="board-wrap">
+    <div class="days" id="days"></div>
+    <div class="hours" id="hours"></div>
+    <div id="board"></div>
+    <div id="fx"></div>
+  </div>
+
+  <div class="panel">
+    <h2 id="queueTitle"><span>to_do pile</span><span id="queueCount"></span></h2>
+    <div id="well"></div>
+    <div class="next"><i id="nextBar"></i></div>
+    <div class="hint">pressR to turn </div>
+  </div>
+</main>
+
+<div id="overlay"></div>
+
+<div id="title">
+  <canvas id="titleCanvas"></canvas>
+  <div class="title-ui">
+    <h1>to_do<br>list</h1>
+    <button id="titleStart">press enter</button>
+  </div>
+</div>
+
+<script>
+// ================== settings ==================
+const CELL = 46;
+const COLS = 7;              // days visible
+const ROWS = 10;             // 9:00 - 19:00
+const START_HOUR = 9;
+const WELL_COLS = 5;         // the to-do pile
+const WELL_ROWS = 10;
+const DANGER_ROWS = 2;       // a task landing above the dashed line = game over
+const FALL_MS = 55;          // how fast new tasks drop into the pile
+
+// ---- difficulty: change these to make it easier / harder ----
+const DAY_START    = 15000;  // first day lasts 15 s
+const DAY_MIN      = 8000;   // days never get shorter than this
+const DAY_SPEEDUP  = 0.94;   // each day is 6% shorter than the last
+const TASK_START   = 5000;   // a new task every 5 s at first
+const TASK_MIN     = 1200;   // can get as fast as one every 1.2 s
+const TASK_SPEEDUP = 0.88;   // tasks come 12% faster each day
+const BIG_FROM_DAY = 3;      // from day 4 on, big 5–6 h tasks show up too
+const WARN_ROWS    = 4;      // pile this close to the line → warning
+
+// big tasks that only show up later
+const BIG_SHAPES = [
+  [[0,0],[0,1],[0,2],[0,3],[0,4]],             // 5 h straight
+  [[0,0],[0,1],[0,2],[1,2],[2,2]],             // 5 h corner
+  [[0,0],[1,0],[0,1],[1,1],[0,2],[1,2]],       // two days, 3 h each
+];
+
+// ================== sound (made in the browser, no files) ==================
+const sfx = (() => {
+  let ac = null, muted = false;
+  function ctx() {
+    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    if (ac && ac.state === 'suspended') ac.resume();
+    return ac;
+  }
+  function tone(freq, dur, type = 'square', vol = .07, slideTo = null, delay = 0) {
+    const a = ctx();
+    if (!a || muted) return;
+    const t = a.currentTime + delay;
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(a.destination);
+    o.start(t); o.stop(t + dur + .02);
+  }
+  return {
+    unlock: ctx,
+    toggle() { muted = !muted; return muted; },
+    place()  { tone(190, .13, 'square', .08, 80); },
+    land()   { tone(120, .07, 'triangle', .14, 70); },
+    rotate() { tone(520, .035, 'square', .035); },
+    clear()  { [523, 659, 784].forEach((f, i) => tone(f, .12, 'square', .05, null, i * .06)); },
+    full()   { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, .15, 'square', .055, null, i * .065)); },
+    empty()  { tone(220, .18, 'triangle', .06, 160); },
+    danger() { tone(880, .07, 'square', .04); tone(880, .07, 'square', .04, null, .12); },
+    over()   { [392, 330, 262, 196].forEach((f, i) => tone(f, .3, 'square', .06, null, i * .2)); },
+  };
+})();
+window.addEventListener('pointerdown', () => sfx.unlock(), { once: true });
+window.addEventListener('keydown', () => sfx.unlock(), { once: true });
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const TODAY = new Date().getDay();
+document.documentElement.style.setProperty('--cell', CELL + 'px');
+
+const COLORS = ['#5bc0f8', '#ee9a3a', '#f9e05e', '#e04cf5', '#75f47a', '#ec3a73', '#4a7bf7'];
+// shapes: [column (day), row (hour)]. Vertical = hours in a row on one day.
+const SHAPES = [
+  [[0,0]],
+  [[0,0],[0,1]],
+  [[0,0],[0,1],[0,2]],
+  [[0,0],[0,1],[1,1]],
+  [[0,0],[0,1],[0,2],[0,3]],
+  [[0,0],[0,1],[0,2],[1,2]],
+  [[0,0],[1,0],[0,1],[1,1]],
+  [[0,0],[1,0],[2,0],[1,1]],
+  [[0,0],[0,1],[1,1],[1,2]],
+];
+const DEFAULT_TASKS = ['essay', 'gym', 'reading', 'group meeting', 'laundry', 'call home', 'project', 'groceries', 'email prof', 'studio time'];
+
+// ================== state ==================
+let taskNames = [];
+let mode = 'start';          // start | play | pause | over
+let firstDay, cells, history, queue, score, log, nextId, namePool;
+let calReturn = null;        // where to go when the calendar closes
+
+// Fixed weekly commitments: "weekday,row" -> label. weekday: 0 = Sun ... 6 = Sat.
+// They repeat every week, so a Tuesday class blocks every Tuesday in the game.
+let busy = {};
+const busyAt = (day, row) => busy[((TODAY + day) % 7) + ',' + row];
+
+// remember tasks + commitments between visits (if the browser allows it)
+try {
+  const saved = JSON.parse(localStorage.getItem('weekPuzzle') || 'null');
+  if (saved) { taskNames = saved.taskNames || []; busy = saved.busy || {}; }
+} catch (e) {}
+function save() {
+  try { localStorage.setItem('weekPuzzle', JSON.stringify({ taskNames, busy })); } catch (e) {}
+}
+let dayTimer, dayLen, spawnTimer, spawnLen;
+let fallTimer = 0, inDanger = false, justPlaced = new Set();
+let drag = null;
+let lastPointer = { x: 0, y: 0 };
+
+const dayName = d => WEEKDAYS[(TODAY + d) % 7];
+const rand = arr => arr[Math.floor(Math.random() * arr.length)];
+
+function newGame() {
+  firstDay = 0;
+  cells = new Map();         // "day,row" -> { id, name, color, label }  (what's still on the board)
+  history = new Map();       // same, but never cleared — used by the calendar view
+  queue = [];
+  score = 0;
+  log = [];
+  nextId = 1;
+  namePool = [];
+  dayTimer = 0; dayLen = DAY_START;
+  spawnTimer = 0; spawnLen = TASK_START;
+  fallTimer = 0; inDanger = false;
+  mode = 'play';
+  hideOverlay();
+  dropIn(); dropIn();
+  render();
+}
+
+function newTask() {
+  if (!namePool.length) namePool = [...taskNames].sort(() => Math.random() - .5);
+  const pool = firstDay >= BIG_FROM_DAY ? SHAPES.concat(BIG_SHAPES) : SHAPES;
+  const shape = rand(pool).map(p => [...p]);
+  return { id: nextId++, name: namePool.pop(), color: COLORS[(nextId - 2) % COLORS.length], shape };
+}
+
+// ================== game loop ==================
+let lastTime = performance.now();
+function loop(now) {
+  const dt = now - lastTime;
+  lastTime = now;
+  if (mode === 'play') {
+    dayTimer += dt;
+    spawnTimer += dt;
+    fallTimer += dt;
+    if (dayTimer >= dayLen) passDay();
+    if (spawnTimer >= spawnLen) spawn();
+    if (fallTimer >= FALL_MS) { fallTimer = 0; gravity(); }
+  }
+  const bar = document.getElementById('todayBar');
+  if (bar) bar.style.width = Math.max(0, 1 - dayTimer / dayLen) * 100 + '%';
+  document.getElementById('nextBar').style.width =
+    (mode === 'start' ? 0 : Math.min(1, spawnTimer / spawnLen) * 100) + '%';
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function passDay() {
+  // everything placed today counts as done
+  const done = {};
+  const debris = [];
+  let hours = 0, free = 0;
+  for (let r = 0; r < ROWS; r++) {
+    const key = firstDay + ',' + r;
+    const c = cells.get(key);
+    if (c) {
+      score++; hours++;
+      done[c.name] = done[c.name] || { hours: 0, color: c.color };
+      done[c.name].hours++;
+      debris.push({ r, color: c.color });
+      cells.delete(key);
+    } else if (!busyAt(firstDay, r)) {
+      free++;
+    }
+  }
+  log.push({ day: firstDay, tasks: done });
+  firstDay++;
+  dayTimer = 0;
+  dayLen = Math.max(DAY_MIN, dayLen * DAY_SPEEDUP);        // days get shorter
+  spawnLen = Math.max(TASK_MIN, spawnLen * TASK_SPEEDUP);  // tasks come faster
+  render();
+
+  const b = document.getElementById('board');
+  b.classList.remove('flash'); void b.offsetWidth; b.classList.add('flash');
+  const fx = document.getElementById('fx');
+
+  // the finished day breaks apart like a cleared line
+  debris.forEach(({ r, color }) => {
+    const d = document.createElement('div');
+    d.className = 'debris';
+    d.style.left = '0px';
+    d.style.top = r * CELL + 'px';
+    d.style.background = color;
+    d.style.setProperty('--dx', (Math.random() * 90 - 20) + 'px');
+    d.style.setProperty('--dy', (Math.random() * 120 - 80) + 'px');
+    d.style.setProperty('--rot', (Math.random() * 180 - 90) + 'deg');
+    fx.appendChild(d);
+    setTimeout(() => d.remove(), 700);
+  });
+
+  if (hours && free === 0) { popup(fx, 'full day!', 4, true); sfx.full(); }
+  else if (hours)          { popup(fx, '+' + hours + 'h', 4); sfx.clear(); }
+  else                     { popup(fx, 'nothing', 4); sfx.empty(); }
+}
+
+function popup(parent, text, row, big) {
+  const p = document.createElement('div');
+  p.className = 'popup' + (big ? ' big' : '');
+  p.textContent = text;
+  p.style.left = '6px';
+  p.style.top = row * CELL + 'px';
+  parent.appendChild(p);
+  setTimeout(() => p.remove(), 1200);
+}
+
+function spawn() {
+  spawnTimer = 0;
+  dropIn();
+}
+
+// ================== the to-do pile ==================
+// queue = the tasks sitting in the pile. Each has pos {c, r} in the pile and a falling flag.
+function wellFree(shape, c0, r0, except) {
+  const taken = new Set();
+  queue.forEach(t => {
+    if (t === except) return;
+    t.shape.forEach(([c, r]) => taken.add((c + t.pos.c) + ',' + (r + t.pos.r)));
+  });
+  return shape.every(([c, r]) => {
+    const x = c + c0, y = r + r0;
+    return x >= 0 && x < WELL_COLS && y >= 0 && y < WELL_ROWS && !taken.has(x + ',' + y);
+  });
+}
+
+function dropIn() {
+  const task = newTask();
+  const { w } = size(task.shape);
+  const spots = Array.from({ length: WELL_COLS - w + 1 }, (_, i) => i).sort(() => Math.random() - .5);
+  const c = spots.find(c => wellFree(task.shape, c, 0));
+  if (c === undefined) return gameOver();      // no room left at the top
+  task.pos = { c, r: 0 };
+  task.falling = true;
+  task.moved = false;
+  queue.push(task);
+  renderWell();
+}
+
+// move falling pieces down one row; lowest pieces first so they stack properly
+function gravity() {
+  let changed = false, landed = false;
+  const bottom = t => t.pos.r + size(t.shape).h;
+  [...queue].sort((a, b) => bottom(b) - bottom(a)).forEach(t => {
+    if (!t.falling) return;
+    if (wellFree(t.shape, t.pos.c, t.pos.r + 1, t)) {
+      t.pos.r++; t.moved = true; changed = true;
+    } else {
+      t.falling = false; changed = true;
+      if (t.moved) landed = true;
+    }
+  });
+  if (!changed) return;
+  if (landed) { sfx.land(); shake(document.getElementById('well')); }
+
+  // a task that lands across the line = too much
+  if (queue.some(t => !t.falling && t.pos.r < DANGER_ROWS)) { renderWell(); return gameOver(); }
+
+  const danger = queue.some(t => !t.falling && t.pos.r < WARN_ROWS);
+  if (danger && !inDanger) sfx.danger();
+  inDanger = danger;
+  renderWell();
+}
+
+function settle() { queue.forEach(t => { t.falling = true; t.moved = false; }); }
+
+function shake(el) {
+  el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
+}
+
+// ================== helpers ==================
+const size = shape => ({
+  w: Math.max(...shape.map(p => p[0])) + 1,
+  h: Math.max(...shape.map(p => p[1])) + 1,
+});
+
+function rotate(shape, grab) {
+  const { h } = size(shape);
+  const turn = ([c, r]) => [h - 1 - r, c];
+  return { shape: shape.map(turn), grab: grab ? turn(grab) : null };
+}
+
+function canPlace(shape, c0, r0) {
+  return shape.every(([c, r]) => {
+    const x = c + c0, y = r + r0;
+    return x >= 0 && x < COLS && y >= 0 && y < ROWS
+      && !cells.has((firstDay + x) + ',' + y) && !busyAt(firstDay + x, y);
+  });
+}
+
+function makeCell(c, r, color, label, extraClass) {
+  const el = document.createElement('div');
+  el.className = 'cell ' + (extraClass || '');
+  el.style.left = c * CELL + 'px';
+  el.style.top = r * CELL + 'px';
+  if (color) el.style.background = color;
+  if (label) {
+    const s = document.createElement('span');
+    s.className = 'label';
+    s.textContent = label;
+    el.appendChild(s);
+  }
+  return el;
+}
+
+function makePieceEl(task, shape) {
+  const { w, h } = size(shape);
+  const el = document.createElement('div');
+  el.className = 'piece';
+  el.style.width = w * CELL + 'px';
+  el.style.height = h * CELL + 'px';
+  shape.forEach(([c, r]) => el.appendChild(makeCell(c, r, task.color)));
+  return el;
+}
+
+const firstCell = shape => [...shape].sort((a, b) => a[1] - b[1] || a[0] - b[0])[0];
+
+// ================== render ==================
+const board = document.getElementById('board');
+const wellEl = document.getElementById('well');
+let previewLayer;
+
+function render() {
+  document.getElementById('days').innerHTML = Array.from({ length: COLS }, (_, i) =>
+    i === 0
+      ? `<div class="today">${dayName(firstDay)}<span class="bar"><i id="todayBar"></i></span></div>`
+      : `<div>${dayName(firstDay + i)}</div>`
+  ).join('');
+  document.getElementById('status').textContent = `day ${firstDay + 1} — ${score}h done`;
+
+  board.innerHTML = '<div class="today-col"></div>';
+  for (let col = 0; col < COLS; col++) {
+    for (let r = 0; r < ROWS; r++) {
+      const b = busyAt(firstDay + col, r);
+      if (!b) continue;
+      const startsRun = r === 0 || busyAt(firstDay + col, r - 1) !== b;
+      board.appendChild(makeCell(col, r, null, startsRun ? b : '', 'busy'));
+    }
+  }
+  cells.forEach((c, key) => {
+    const [d, r] = key.split(',').map(Number);
+    board.appendChild(makeCell(d - firstDay, r, c.color, c.label, justPlaced.has(key) ? 'hit' : ''));
+  });
+  previewLayer = document.createElement('div');
+  board.appendChild(previewLayer);
+  renderPreview();
+  renderWell();
+}
+
+function renderWell() {
+  wellEl.innerHTML = '<div class="danger-line"></div>';
+  queue.forEach(t => {
+    const fc = firstCell(t.shape);
+    const held = drag && drag.task === t;
+    t.shape.forEach(([c, r]) => {
+      const label = c === fc[0] && r === fc[1] ? t.name + ' ' + t.shape.length + 'h' : '';
+      const el = makeCell(c + t.pos.c, r + t.pos.r, t.color, label, held ? 'ghost' : '');
+      el.addEventListener('pointerdown', e => startDrag(t, e, [c, r]));
+      el.addEventListener('dblclick', () => turnInWell(t));
+      wellEl.appendChild(el);
+    });
+  });
+  wellEl.classList.toggle('danger', inDanger);
+  document.getElementById('queueTitle').classList.toggle('full', inDanger);
+  document.getElementById('queueCount').textContent = inDanger ? 'too high!' : queue.length + ' waiting';
+}
+
+// double-click: turn a piece inside the pile if there's room (nudge it sideways if needed)
+function turnInWell(t) {
+  if (mode !== 'play') return;
+  const turned = rotate(t.shape).shape;
+  for (const dc of [0, -1, 1, -2, 2]) {
+    if (wellFree(turned, t.pos.c + dc, t.pos.r, t)) {
+      t.shape = turned; t.pos.c += dc; t.falling = true;
+      sfx.rotate();
+      renderWell();
+      return;
+    }
+  }
+}
+
+function renderPreview() {
+  if (!previewLayer) return;
+  previewLayer.innerHTML = '';
+  if (!drag || !drag.target) return;
+  const { c0, r0, ok } = drag.target;
+  drag.shape.forEach(([c, r]) => {
+    const x = c + c0, y = r + r0;
+    if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
+    previewLayer.appendChild(makeCell(x, y, drag.task.color, '', 'preview' + (ok ? '' : ' bad')));
+  });
+}
+
+// ================== dragging ==================
+function startDrag(task, e, grab) {
+  if (mode !== 'play') return;
+  e.preventDefault();
+  drag = { task, shape: task.shape.map(p => [...p]), grab, float: null, target: null };
+  buildFloat();
+  render();
+  moveDrag(e.clientX, e.clientY);
+}
+
+function buildFloat() {
+  if (drag.float) drag.float.remove();
+  drag.float = makePieceEl(drag.task, drag.shape);
+  drag.float.classList.add('float');
+  document.body.appendChild(drag.float);
+}
+
+function moveDrag(x, y) {
+  lastPointer = { x, y };
+  if (!drag) return;
+  const [gc, gr] = drag.grab;
+  drag.float.style.left = x - (gc + 0.5) * CELL + 'px';
+  drag.float.style.top = y - (gr + 0.5) * CELL + 'px';
+  const rect = board.getBoundingClientRect();
+  if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+    const c0 = Math.floor((x - rect.left) / CELL) - gc;
+    const r0 = Math.floor((y - rect.top) / CELL) - gr;
+    drag.target = { c0, r0, ok: canPlace(drag.shape, c0, r0) };
+  } else {
+    drag.target = null;
+  }
+  renderPreview();
+}
+
+function rotateDrag() {
+  if (!drag) return;
+  const r = rotate(drag.shape, drag.grab);
+  drag.shape = r.shape;
+  drag.grab = r.grab;
+  sfx.rotate();
+  buildFloat();
+  moveDrag(lastPointer.x, lastPointer.y);
+}
+
+function endDrag() {
+  if (!drag) return;
+  const { task, target } = drag;
+  // re-check: the day may have moved while dragging
+  if (mode === 'play' && target && canPlace(drag.shape, target.c0, target.r0)) {
+    const fc = firstCell(drag.shape);
+    justPlaced = new Set();
+    drag.shape.forEach(([c, r]) => {
+      const key = (firstDay + c + target.c0) + ',' + (r + target.r0);
+      const data = {
+        id: task.id, name: task.name, color: task.color,
+        label: c === fc[0] && r === fc[1] ? task.name : '',
+      };
+      cells.set(key, data);
+      history.set(key, data);
+      justPlaced.add(key);
+    });
+    queue = queue.filter(t => t !== task);
+    settle();                  // everything above it in the pile drops down
+    sfx.place();
+    shake(board);
+    cancelDrag();
+    justPlaced = new Set();    // flash only once
+    return;
+  }
+  // not placed: it stays where it was in the pile
+  cancelDrag();
+}
+
+function cancelDrag() {
+  if (!drag) return;
+  drag.float.remove();
+  drag = null;
+  render();
+}
+
+window.addEventListener('pointermove', e => moveDrag(e.clientX, e.clientY));
+window.addEventListener('pointerup', endDrag);
+window.addEventListener('keydown', e => {
+  if ((e.key === 'r' || e.key === 'R' || e.key === ' ') && drag) { e.preventDefault(); rotateDrag(); }
+  if (mode === 'calendar' && (e.key === 'Escape' || e.key === 'c' || e.key === 'C')) return closeCalendar();
+  if ((e.key === 'c' || e.key === 'C') && (mode === 'play' || mode === 'pause')) return openCalendar();
+  if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && (mode === 'play' || mode === 'pause')) togglePause();
+});
+document.getElementById('calBtn').addEventListener('click', () => {
+  if (mode === 'calendar') closeCalendar();
+  else if (mode === 'play' || mode === 'pause' || mode === 'over') openCalendar();
+});
+window.addEventListener('wheel', e => { if (drag) { e.preventDefault(); rotateDrag(); } }, { passive: false });
+document.getElementById('pauseBtn').addEventListener('click', togglePause);
+document.getElementById('muteBtn').addEventListener('click', e => {
+  e.target.textContent = sfx.toggle() ? 'sound off' : 'sound on';
+});
+
+// ================== screens ==================
+const overlay = document.getElementById('overlay');
+function hideOverlay() { overlay.classList.add('hidden'); overlay.innerHTML = ''; }
+function showOverlay(html) { overlay.innerHTML = '<div class="screen">' + html + '</div>'; overlay.classList.remove('hidden'); }
+
+function showStart() {
+  mode = 'start';
+  showOverlay(`
+    <h2>plan your week</h2>/
+    <p>what are your plans for this week </p>
+    <textarea id="taskInput" placeholder="${DEFAULT_TASKS.slice(0, 5).join('\n')}">${escapeHtml(taskNames.join('\n'))}</textarea>
+
+    <h3>schedule</h3>
+    <p class="small">drag to fill in</p>
+    <div class="ed-tools">
+      <span>name</span><input id="busyLabel" value="class" maxlength="14">
+      <button id="clearBusy">clear</button>
+    </div>
+    <div class="editor" id="editor"></div>
+
+    <div class="buttons"><button id="startBtn">go</button></div>
+  `);
+  buildEditor();
+  document.getElementById('clearBusy').onclick = () => { busy = {}; refreshEditor(); };
+  document.getElementById('startBtn').onclick = () => {
+    const lines = document.getElementById('taskInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+    taskNames = lines.length ? lines : DEFAULT_TASKS;
+    save();
+    newGame();
+  };
+}
+
+// ---------- weekly "already taken" editor ----------
+const ED_DAYS = [1, 2, 3, 4, 5, 6, 0];   // Mon ... Sun (weekday numbers)
+let painting = null;                    // 'paint' | 'erase' | null
+
+function buildEditor() {
+  const ed = document.getElementById('editor');
+  let html = '<div></div>' + ED_DAYS.map(w => `<div class="eh">${WEEKDAYS[w]}</div>`).join('');
+  for (let r = 0; r < ROWS; r++) {
+    html += `<div class="er">${START_HOUR + r}:00</div>`;
+    html += ED_DAYS.map(w => `<div class="ed-cell" data-w="${w}" data-r="${r}"></div>`).join('');
+  }
+  ed.innerHTML = html;
+
+  const apply = target => {
+    if (!target || !target.dataset || target.dataset.w === undefined) return;
+    const key = target.dataset.w + ',' + target.dataset.r;
+    const label = document.getElementById('busyLabel').value.trim() || 'Busy';
+    if (painting === 'paint') busy[key] = label;
+    else delete busy[key];
+    refreshEditor();
+  };
+  ed.addEventListener('pointerdown', e => {
+    const t = e.target;
+    if (!t.dataset || t.dataset.w === undefined) return;
+    e.preventDefault();
+    painting = busy[t.dataset.w + ',' + t.dataset.r] ? 'erase' : 'paint';
+    apply(t);
+  });
+  ed.addEventListener('pointermove', e => {
+    if (!painting) return;
+    apply(document.elementFromPoint(e.clientX, e.clientY));
+  });
+  refreshEditor();
+}
+
+function refreshEditor() {
+  document.querySelectorAll('#editor .ed-cell').forEach(el => {
+    const w = +el.dataset.w, r = +el.dataset.r;
+    const b = busy[w + ',' + r];
+    el.classList.toggle('on', !!b);
+    el.textContent = b && busy[w + ',' + (r - 1)] !== b ? b : '';
+    el.title = b || '';
+  });
+}
+window.addEventListener('pointerup', () => { painting = null; });
+
+function togglePause() {
+  if (mode === 'play') {
+    cancelDrag();
+    mode = 'pause';
+    showOverlay(`<h2>paused</h2><div class="buttons"><button id="resumeBtn">back</button></div>`);
+    document.getElementById('resumeBtn').onclick = togglePause;
+  } else if (mode === 'pause') {
+    mode = 'play';
+    hideOverlay();
+  }
+}
+
+function gameOver() {
+  cancelDrag();
+  if (mode === 'play') sfx.over();   // not again when coming back from the calendar
+  mode = 'over';
+  const days = log.filter(d => Object.keys(d.tasks).length);
+  const list = days.length
+    ? '<ul>' + days.map(d => '<li><b>' + dayName(d.day) + '</b>' +
+        Object.entries(d.tasks).map(([n, t]) =>
+          `<span class="dot" style="background:${t.color}"></span>${escapeHtml(n)} (${t.hours}h)`).join('') +
+      '</li>').join('') + '</ul>'
+    : '<p>nothing got done.</p>';
+  showOverlay(`
+    <h2>too much.</h2>
+    <p>${firstDay} day${firstDay === 1 ? '' : 's'}, ${score}h done.</p>
+    ${list}
+    <div class="buttons"><button id="againBtn">again</button><button id="calOverBtn">calendar</button><button id="editBtn">change tasks</button></div>
+  `);
+  document.getElementById('againBtn').onclick = newGame;
+  document.getElementById('calOverBtn').onclick = openCalendar;
+  document.getElementById('editBtn').onclick = showStart;
+}
+
+// ================== calendar view ==================
+function openCalendar() {
+  cancelDrag();
+  calReturn = mode;          // 'play' | 'pause' | 'over'
+  mode = 'calendar';         // the game is frozen while you look
+
+  let lastDay = firstDay + COLS - 1;
+  history.forEach((_, key) => { lastDay = Math.max(lastDay, +key.split(',')[0]); });
+
+  const H = 40;              // pixels per hour in this view
+  let head = '', body = '';
+  for (let d = 0; d <= lastDay; d++) {
+    const when = d < firstDay ? 'past' : d === firstDay ? 'today' : '';
+    const tag = when === 'past' ? 'done' : when === 'today' ? 'today' : '';
+    head += `<div class="${when}">${dayName(d)}<small>${tag}</small></div>`;
+
+    // merge consecutive hours of the same task into one block
+    let blocks = '';
+    for (let r = 0; r < ROWS; ) {
+      const c = history.get(d + ',' + r);
+      const b = busyAt(d, r);
+      if (!c && b) {           // fixed commitment, e.g. a class
+        let end = r + 1;
+        while (end < ROWS && busyAt(d, end) === b) end++;
+        blocks += `<div class="cal-block busy" style="top:${r * H + 1}px;height:${(end - r) * H - 2}px">
+          ${escapeHtml(b)}<small>${START_HOUR + r}:00–${START_HOUR + end}:00</small></div>`;
+        r = end;
+        continue;
+      }
+      if (!c) { r++; continue; }
+      let end = r + 1;
+      while (end < ROWS && history.get(d + ',' + end) && history.get(d + ',' + end).id === c.id) end++;
+      blocks += `<div class="cal-block" style="top:${r * H + 1}px;height:${(end - r) * H - 2}px;background:${c.color}">
+        ${escapeHtml(c.name)}<small>${START_HOUR + r}:00–${START_HOUR + end}:00</small></div>`;
+      r = end;
+    }
+    body += `<div class="cal-col ${when}">${blocks}</div>`;
+  }
+
+  const hours = Array.from({ length: ROWS }, (_, i) => `<div>${START_HOUR + i}:00</div>`).join('');
+  showOverlay(`
+    <h2>so far</h2>
+    <div class="cal-scroll">
+      <div class="cal">
+        <div class="cal-head">${head}</div>
+        <div class="cal-hours">${hours}</div>
+        <div class="cal-body">${body}</div>
+      </div>
+    </div>
+    <div class="buttons"><button id="calClose">back</button></div>
+  `);
+  overlay.querySelector('.screen').classList.add('wide');
+  document.getElementById('calClose').onclick = closeCalendar;
+  // scroll so today is in view
+  const scroller = overlay.querySelector('.cal-scroll');
+  scroller.scrollLeft = Math.max(0, (firstDay - 1) * 96);
+}
+
+function closeCalendar() {
+  if (mode !== 'calendar') return;
+  if (calReturn === 'over') { gameOver(); return; }
+  mode = 'play';
+  hideOverlay();
+  if (calReturn === 'pause') togglePause();
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+// ================== init ==================
+document.getElementById('hours').innerHTML =
+  Array.from({ length: ROWS }, (_, i) => `<div>${START_HOUR + i}:00</div>`).join('');
+firstDay = 0; cells = new Map(); queue = []; score = 0; dayTimer = 0; dayLen = 1; spawnTimer = 0; spawnLen = 1;
+render();
+showStart();
+showTitle();
+
+// ================== title screen ==================
+function showTitle() {
+  const titleEl = document.getElementById('title');
+  const canvas = document.getElementById('titleCanvas');
+  const ctx = canvas.getContext('2d');
+  let W, H, S, regions, floaters, t0 = performance.now(), running = true;
+
+  const FLOAT_SHAPES = SHAPES.filter(s => s.length >= 3);
+  const ease = p => 1 - Math.pow(1 - p, 3);
+
+  // --- the stacked blocks hanging from the top ---
+  function buildStack() {
+    S = Math.max(26, Math.round(W / 38));
+    const cols = Math.ceil(W / S) + 1;
+    const maxH = Math.max(4, Math.floor(H * 0.34 / S));
+
+    // Each drop picks a composition: where the blocks pile up.
+    // x = position across the screen (0–1), h = how tall (0–1), w = how wide the pile is
+    const COMPOSITIONS = [
+      [{ x: 1/3, h: 1,   w: .12 }],                                // heavy on the left third
+      [{ x: 2/3, h: 1,   w: .12 }],                                // heavy on the right third
+      [{ x: 1/3, h: 1,   w: .10 }, { x: 2/3, h: .5, w: .07 }],    // big pile + small echo
+      [{ x: 2/3, h: 1,   w: .10 }, { x: 1/3, h: .5, w: .07 }],
+      [{ x: 0,   h: .85, w: .22 }, { x: 2/3, h: .6, w: .06 }],    // slope from the left edge + accent
+      [{ x: 1,   h: .85, w: .22 }, { x: 1/3, h: .6, w: .06 }],    // slope from the right edge + accent
+    ];
+    const comp = rand(COMPOSITIONS);
+    const BASE = .12;                                           // thin strip everywhere else
+
+    const heights = [];
+    let noise = 0;
+    for (let c = 0; c < cols; c++) {
+      const fx = (c + .5) * S / W;
+      let p = BASE;
+      comp.forEach(pk => { p += pk.h * Math.exp(-Math.pow((fx - pk.x) / pk.w, 2)); });
+      p = Math.min(1, p);
+      noise = Math.max(-1, Math.min(1, noise + Math.floor(Math.random() * 3) - 1));  // small ragged edge
+      heights.push(Math.min(maxH, Math.max(1, Math.round(1 + p * (maxH - 1)) + noise)));
+    }
+    // group filled cells into tetromino-like regions of 3–4 cells
+    const owner = {};
+    regions = [];
+    const filled = (c, r) => c >= 0 && c < cols && r >= 0 && r < heights[c];
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < heights[c]; r++) {
+        if (owner[c + ',' + r] !== undefined) continue;
+        const id = regions.length;
+        const region = { cells: [[c, r]], color: null, delay: 0 };
+        owner[c + ',' + r] = id;
+        const target = Math.random() < .25 ? 3 : 4;
+        while (region.cells.length < target) {
+          const options = [];
+          region.cells.forEach(([x, y]) => [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx, dy]) => {
+            const nx = x + dx, ny = y + dy;
+            if (filled(nx, ny) && owner[nx + ',' + ny] === undefined) options.push([nx, ny]);
+          }));
+          if (!options.length) break;
+          const [nx, ny] = options[Math.floor(Math.random() * options.length)];
+          owner[nx + ',' + ny] = id;
+          region.cells.push([nx, ny]);
+        }
+        // pick a color different from the neighbours
+        const used = new Set();
+        region.cells.forEach(([x, y]) => [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx, dy]) => {
+          const o = owner[(x + dx) + ',' + (y + dy)];
+          if (o !== undefined && o !== id && regions[o]) used.add(regions[o].color);
+        }));
+        const choices = COLORS.filter(col => !used.has(col));
+        region.color = rand(choices.length ? choices : COLORS);
+        // lower pieces drop in later, left to right-ish
+        const lowest = Math.max(...region.cells.map(p => p[1]));
+        region.delay = (maxH - lowest) * 120 + c * 12 + Math.random() * 150;
+        regions.push(region);
+      }
+    }
+  }
+
+  // --- blocks drifting across the middle ---
+  // they move on the same grid as the stack, one square at a time, and turn 90° now and then
+  function makeFloater(anywhere, col) {
+    const rowMin = Math.ceil(H * 0.36 / S), rowMax = Math.max(rowMin, Math.floor(H * 0.48 / S));
+    let shape = rand(FLOAT_SHAPES).map(p => [...p]);
+    for (let i = Math.floor(Math.random() * 4); i > 0; i--) shape = rotate(shape).shape;
+    return {
+      shape, color: rand(COLORS),
+      col: anywhere ? col : -4,
+      row: rowMin + Math.floor(Math.random() * (rowMax - rowMin + 1)),
+      rowMin, rowMax,
+      step: .3 + Math.random() * .35,   // seconds per move
+      acc: Math.random() * .3,
+    };
+  }
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildStack();
+    const n = Math.max(3, Math.round(W / 300));
+    const cols = Math.ceil(W / S);
+    floaters = Array.from({ length: n }, (_, i) => makeFloater(true, Math.floor((i + Math.random() * .5) * cols / n)));
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    if (!running) return;
+    const dt = Math.min(50, now - last) / 1000;
+    last = now;
+    ctx.clearRect(0, 0, W, H);
+
+    // floaters (slowest / farthest drawn first)
+    floaters.forEach((f, i) => {
+      f.acc += dt;
+      while (f.acc >= f.step) {
+        f.acc -= f.step;
+        f.col++;
+        if (Math.random() < .2) f.shape = rotate(f.shape).shape;
+        if (Math.random() < .12) f.row = Math.min(f.rowMax, Math.max(f.rowMin, f.row + (Math.random() < .5 ? -1 : 1)));
+      }
+      if (f.col * S > W) floaters[i] = f = makeFloater(false);
+      ctx.fillStyle = f.color;
+      f.shape.forEach(([c, r]) => ctx.fillRect((f.col + c) * S, (f.row + r) * S, S + .5, S + .5));
+    });
+
+    // stack at the top, each piece dropping into place
+    const t = now - t0;
+    regions.forEach(rg => {
+      const p = Math.min(1, Math.max(0, (t - rg.delay) / 650));
+      if (p <= 0) return;
+      const offset = -Math.round((1 - ease(p)) * H * 0.4 / S) * S;   // drop in whole squares
+      ctx.fillStyle = rg.color;
+      rg.cells.forEach(([c, r]) => ctx.fillRect(c * S, r * S + offset, S + .5, S + .5));
+    });
+
+    requestAnimationFrame(frame);
+  }
+
+  function start() {
+    running = false;
+    titleEl.classList.add('hidden');
+    window.removeEventListener('resize', resize);
+    window.removeEventListener('keydown', onKey);
+  }
+  const onKey = e => { if (e.key === 'Enter') start(); };
+
+  resize();
+  window.addEventListener('resize', resize);
+  window.addEventListener('keydown', onKey);
+  document.getElementById('titleStart').onclick = start;
+  // click the background to drop a new composition
+  canvas.addEventListener('click', () => { buildStack(); t0 = performance.now(); });
+  requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>
